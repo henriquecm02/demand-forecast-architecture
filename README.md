@@ -1,233 +1,87 @@
-# Arquitetura de Forecast - Produto Alfa
+# Agente de previsão de demanda · Produto Alfa
 
-## 1. Contexto do Problema
+Agente de IA que prevê as vendas diárias dos próximos 14 dias, compara modelos, explica o que move a demanda e recomenda o pedido de compra. A publicação da previsão e o retreino só acontecem com aprovação humana.
 
-A empresa **Logística Eficiente S.A.** precisa otimizar sua gestão de estoque do _Produto Alfa_, evitando custos elevados com excesso de armazenamento e minimizando perdas de vendas por falta de estoque. Para isso, é necessário prever a demanda diária do produto nos próximos **14 dias**.
+O projeto nasceu como resposta ao desafio técnico da **Valcann** (arquitetura de forecast para a empresa fictícia Logística Eficiente S.A.). A resposta original era só documento. Aqui ela virou um sistema que roda, com dashboard e avaliação contra gabarito.
 
-## 2. Objetivos
+![Dashboard](docs/img/dash.jpg)
 
--   Prever a quantidade de vendas diárias para os próximos 14 dias.
-    
--   Incorporar variáveis sazonais (dia da semana, feriados e promoções).
-    
--   Implementar o pipeline de dados e modelo na nuvem.
-    
--   Monitorar continuamente a performance e acurácia do modelo.
-    
+## Como funciona
 
-## 3. Estrutura do Projeto
+**O modelo interpreta, o código calcula e confere, a pessoa aprova.**
 
-### 3.1. Análise Exploratória de Dados (EDA)
+1. O Gemini lê a pergunta e escolhe as ferramentas, com saída em JSON Schema.
+2. As ferramentas são código determinístico (pandas, scikit-learn e statsmodels). O modelo de linguagem nunca faz contas.
+3. Antes de mostrar a resposta, o código confere se cada número citado saiu de uma ferramenta. Se algum não saiu, a resposta é marcada como **revisar**.
+4. `publicar_previsao` e `disparar_retreino` são ferramentas sensíveis: viram ações pendentes que só rodam depois de aprovadas no painel.
 
--   **Passos:**
-    
-      1.  Inspeção de valores ausentes, outliers e inconsistências.
-        
-    2.   Estatísticas descritivas das vendas médias por dia da semana.
-        
-    3.   Impacto de promoções e feriados na demanda.
-        
-    4.   Visualizações (tendências temporais, sazonalidades e anomalias).
-        
--   **Ferramentas:** Pandas, Matplotlib/Seaborn, Jupyter Notebooks.
-  - **Exemplo de Código:**
-  ```` python
+Sem `GEMINI_API_KEY`, o agente roda em **modo offline**: escolhe a ferramenta por palavras-chave e monta a resposta a partir dos resumos das ferramentas.
 
-  import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
+| Ferramenta | O que faz |
+|---|---|
+| `prever_demanda` | Previsão diária com intervalo p10–p90 e dias de promoção configuráveis |
+| `comparar_modelos` | Backtest com origem móvel: naive sazonal, regressão em log, GBM e SARIMAX |
+| `explicar_fatores` | Efeito de promoção, feriado, tendência e dia da semana |
+| `recomendar_estoque` | Pedido para cobrir 14 dias com um nível de serviço, descontando o estoque atual |
+| `verificar_drift` | Compara o erro recente com o erro do backtest |
+| `publicar_previsao` · `disparar_retreino` | Sensíveis: exigem aprovação |
 
-# Carregar dados
-df = pd.read_csv('vendas_produto_alfa.csv', parse_dates=['data'])
+## Resultados medidos
 
-# Estatísticas básicas
-print(df.describe())
+Backtest com 8 janelas de 14 dias. Promoções e feriados futuros são tratados como conhecidos, porque fazem parte do plano comercial.
 
-# Vendas ao longo do tempo
-plt.figure(figsize=(12,6))
-sns.lineplot(data=df, x='data', y='vendas')
-plt.title('Vendas do Produto Alfa ao longo do tempo')
-plt.show()
+| Modelo | MAE | MAPE |
+|---|---|---|
+| naive sazonal (linha de base) | 26,80 | 17,05% |
+| **regressão em log** | **6,76** | **4,42%** |
+| SARIMAX(1,0,1)(1,1,1,7) | 7,09 | 4,71% |
+| GBM (HistGradientBoosting) | 9,28 | 5,95% |
 
-# Impacto de promoções
-sns.boxplot(x='em_promocao', y='vendas', data=df)
-plt.title('Impacto da promoção nas vendas')
-plt.show()
+A avaliação contra gabarito (`python eval/run_eval.py`) acertou **18 de 18 casos**:
+- os efeitos reais da série foram recuperados: promoção +35,5% (o real é +35%), feriado −23,7% (o real é −25%) e a razão sábado/segunda 1,435 (o real é 1,444);
+- o melhor modelo tem menos da metade do erro da linha de base;
+- 10 perguntas foram roteadas para a ferramenta certa, e as ações sensíveis ficaram retidas;
+- um número inventado pelo modelo foi barrado, e o número correto passou.
 
-# Impacto de feriados
-sns.boxplot(x='feriado_nacional', y='vendas', data=df)
-plt.title('Impacto de feriado nas vendas')
-plt.show()
-.
-.
-.
-  ````
+O detalhe de cada caso está em [`eval/resultados.md`](eval/resultados.md).
 
-### 3.2. Preparação e Limpeza dos Dados
+## Limites
+- **Os dados são sintéticos.** O desafio não traz dados. A série foi gerada a partir de parâmetros conhecidos ([`data/parametros_reais.json`](data/parametros_reais.json)) justamente para permitir o gabarito. Dados reais têm rupturas de estoque, mudanças de preço e promoções de intensidades diferentes, e o erro seria maior.
+- O MAPE de 4,42% vale para esta série. Ele mostra que o pipeline funciona, não a acurácia que se teria em produção.
+- O roteamento offline é por palavras-chave. Com a chave do Gemini, a escolha de ferramentas é mais flexível, mas ainda não foi medida com o modelo real. Para medir, rode o workflow manual com o secret `GEMINI_API_KEY`.
+- A publicação grava um CSV local. Na arquitetura proposta, o destino seria o S3 e o retreino dispararia um pipeline (veja abaixo).
 
--   Conversão de datas para formato `datetime`.
-    
--   Criação de features adicionais:
-    
-    -   `lag features` (vendas dos últimos 7, 14, 30 dias).
-        
-    -   `rolling averages` (médias móveis).
-        
-    -   Encoding de variáveis categóricas (ex: one-hot para dia da semana).
-        
--   Tratamento de valores ausentes com interpolação temporal ou imputação.
-- **Exemplo de Código:**
-````python 
-from prophet import Prophet
+## Como rodar
+```bash
+pip install -e ".[dev]"
+streamlit run app/streamlit_app.py      # dashboard + agente
+python eval/run_eval.py                 # avaliação contra gabarito
+pytest -q                               # testes, sem rede
+```
+Para usar o Gemini, copie `.env.example` para `.env` e preencha `GEMINI_API_KEY`.
 
-# Preparar dados
-prophet_df = df[['data','vendas']].rename(columns={'data':'ds', 'vendas':'y'})
-  
-# Adicionar feriados e promoções
-from prophet.make_holidays import make_holidays_df
+![Agente](docs/img/agente.jpg)
 
-# Para simplificação, consideramos apenas feriados nacionais conhecidos
-feriados = df[df['feriado_nacional']==True][['data']].rename(columns={'data':'ds'})
-feriados['holiday'] = 'feriado_nacional'
-m = Prophet(holidays=feriados, weekly_seasonality=True, daily_seasonality=False)
-m.add_regressor('em_promocao')
-m.fit(prophet_df.assign(em_promocao=df['em_promocao']))
-
-# Forecast 14 dias
-future = m.make_future_dataframe(periods=14)
-future['em_promocao'] = 0 # Exemplo sem promoções futuras
-forecast = m.predict(future)
-
-# Plotar previsões
-m.plot(forecast)
-plt.show()
-````
-### 3.3. Modelagem e Treinamento
-
--   **Modelos candidatos:**
-    
-    -   **ARIMA/SARIMA** → para capturar sazonalidade temporal.
-        
-    -   **Facebook Prophet** → adequado para séries temporais com feriados e sazonalidade.
-        
-    -   **XGBoost/LightGBM** → para capturar interações complexas entre promoções, feriados e sazonalidade.
-        
--   **Validação cruzada temporal:** para evitar _data leakage_.
-    
--   **Métricas de avaliação:** RMSE, MAE, MAPE.
--  **Exemplo de Código:**
-````python 
-import lightgbm as lgb
-from sklearn.model_selection import TimeSeriesSplit
-from sklearn.metrics import mean_absolute_error
-# Features e target
-
-features = ['lag_1','lag_7','lag_14','lag_28','rolling_7','rolling_14','day_of_week','is_weekend','month','em_promocao','feriado_nacional']
-X = df[features]
-y = df['vendas']
-# Time series split
-tscv = TimeSeriesSplit(n_splits=5)
-
-for train_idx, test_idx in tscv.split(X):
-	X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
-	y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
-	train_data = lgb.Dataset(X_train, label=y_train)
-	test_data = lgb.Dataset(X_test, label=y_test, reference=train_data)
-	params = {'objective':'regression', 'metric':'mae'}
-	model = lgb.train(params, train_data, valid_sets=[test_data], early_stopping_rounds=10)
-	y_pred = model.predict(X_test)
-	print('MAE:', mean_absolute_error(y_test, y_pred))
-````
-### 3.4. Deploy do Modelo na Nuvem
-
--   **Infraestrutura proposta:**
-    
-    -   Armazenamento de dados: **Amazon S3** (dados brutos e processados).
-        
-    -   Orquestração: **AWS Step Functions** ou **Airflow no MWAA**.
-        
-    -   Treinamento: **Amazon SageMaker**.
-        
-    -   Deploy: **SageMaker Endpoint** ou **API em Lambda + API Gateway**.
-        
-    -   Banco de dados para histórico: **Amazon RDS** ou **DynamoDB**.
-   -  **Exemplo de Código:**
-````python 
-from fastapi import FastAPI
-import pandas as pd
-import joblib
-
-app = FastAPI()
-model = joblib.load('modelo_lgb.pkl')
-@app.post('/predict')
-def predict(request: dict):
-	df_input = pd.DataFrame([request])
-	prediction = model.predict(df_input)
-	return {'previsao': prediction.tolist()}
-````
-### 3.5. Monitoramento e Manutenção
-
--   **Monitoramento de performance:**
-    
-    -   Drift de dados (mudanças de distribuição nas features).
-        
-    -   Acurácia preditiva (comparação previsão vs vendas reais).
-        
--   **Ferramentas:**
-    
-    -   **AWS CloudWatch** (logs e alertas).
-        
-    -   **SageMaker Model Monitor** (monitoramento de drift).
-        
--   **Retreinamento automático:** pipeline que dispara quando a acurácia cai abaixo de um threshold.
-- **Exemplo de Código**:
-````python
-    import boto3
-
-cloudwatch = boto3.client('cloudwatch')
-# Enviar MAE diário para CloudWatch
-cloudwatch.put_metric_data
-	Namespace='ProdutoAlfaForecast',
-	MetricData=[{
-		'MetricName': 'MAE',
-		'Value': 2.3,
-		'Unit': 'Count'
-}]
-)
-````
-## 4. Fluxo Arquitetural (Pipeline)
-
-```mermaid
-graph TD;
-    A[Coleta de Dados - CSV/S3] --> B[EDA e Limpeza - SageMaker Notebook];
-    B --> C[Feature Engineering];
-    C --> D[Model Training - SageMaker];
-    D --> E[Deploy em Endpoint/API];
-    E --> F[Previsões diárias para Operações];
-    F --> G[Monitoramento CloudWatch];
-    G -->|Drift Detectado| C;
-
+## Estrutura
+```
+src/forecastagent/
+  agentcore.py   cliente Gemini, laço de ferramentas, conferência de números, aprovações
+  data.py        gerador da série sintética (parâmetros conhecidos)
+  models.py      modelos, backtest com origem móvel e explicação dos efeitos
+  tools.py       ferramentas do agente e roteamento offline
+app/streamlit_app.py   Dashboard · Agente · Avaliação · Aprovações
+eval/run_eval.py       gabarito
+docs/desafio/          respostas originais às três questões do desafio
 ```
 
-## 5. Benefícios da Arquitetura
+## Arquitetura em nuvem (resposta à Questão 2)
+A proposta de produção continua válida e está em [`docs/desafio/questao2_arquitetura.md`](docs/desafio/questao2_arquitetura.md), com os trechos de código corrigidos:
+- dados brutos no **S3**;
+- orquestração diária com **Step Functions** (ou MWAA);
+- treino e inferência no **SageMaker**;
+- métricas de erro no **CloudWatch**;
+- retreino disparado por drift.
 
--   **Escalabilidade:** uso de recursos elásticos da nuvem.
-    
--   **Automação:** pipelines de ETL, treinamento e deploy automatizados.
-    
--   **Confiabilidade:** monitoramento contínuo e alertas automáticos.
-    
--   **Integração com Negócio:** previsões diárias acessíveis via API.
-    
+Este repositório implementa o miolo dessa arquitetura (modelos, backtest, monitor de drift e aprovação) de forma que dá para rodar no laptop.
 
-## 6. Próximos Passos
-
--   Criar POC com Prophet e avaliar contra ARIMA e XGBoost.
-    
--   Implementar o pipeline em SageMaker.
-    
--   Configurar monitoramento e agendamento de previsões automáticas.
-    
--   Treinar a equipe de operações para consumir as previsões via dashboard (Power BI/Tableau ou QuickSight).
-    
-
+As outras duas questões do desafio estão em [`docs/desafio/`](docs/desafio/): adoção de IA no varejo e app de marés.

@@ -1,0 +1,178 @@
+{
+  "acertos": 18,
+  "total": 18,
+  "backtest": [
+    {
+      "modelo": "naive_sazonal",
+      "mae": 26.8,
+      "mape": 17.05,
+      "vies": -0.77
+    },
+    {
+      "modelo": "regressao_log",
+      "mae": 6.76,
+      "mape": 4.42,
+      "vies": 0.4
+    },
+    {
+      "modelo": "gbm",
+      "mae": 9.28,
+      "mape": 5.95,
+      "vies": 1.58
+    },
+    {
+      "modelo": "sarimax",
+      "mae": 7.09,
+      "mape": 4.71,
+      "vies": -0.96
+    }
+  ],
+  "fatores": {
+    "efeito_promocao_pct": 35.5,
+    "efeito_feriado_pct": -23.7,
+    "tendencia_pct_ano": 8.4,
+    "fator_dia_semana": {
+      "seg": 0.899,
+      "ter": 0.942,
+      "qua": 0.999,
+      "qui": 0.995,
+      "sex": 1.15,
+      "sab": 1.29,
+      "dom": 0.801
+    }
+  },
+  "casos": [
+    {
+      "caso": "efeito da promoção recuperado (±5 p.p.)",
+      "ok": true,
+      "obtido": 35.5,
+      "esperado": 35.0
+    },
+    {
+      "caso": "efeito do feriado recuperado (±5 p.p.)",
+      "ok": true,
+      "obtido": -23.7,
+      "esperado": -25.0
+    },
+    {
+      "caso": "sábado/segunda recuperado (±3%)",
+      "ok": true,
+      "obtido": 1.435,
+      "esperado": 1.444
+    },
+    {
+      "caso": "melhor modelo tem metade do MAPE do naive sazonal",
+      "ok": true,
+      "obtido": {
+        "regressao_log": 4.42
+      },
+      "esperado": {
+        "naive_sazonal": 17.05
+      }
+    },
+    {
+      "caso": "previsão: 14 dias, sem negativos, p10 <= previsão <= p90",
+      "ok": true,
+      "obtido": 14,
+      "esperado": 14
+    },
+    {
+      "caso": "dias com promoção previstos acima dos demais",
+      "ok": true,
+      "obtido": 1.51,
+      "esperado": "> 1.15"
+    },
+    {
+      "caso": "roteamento: Quanto vamos vender nos próximos 14 dias?",
+      "ok": true,
+      "obtido": [
+        "prever_demanda"
+      ],
+      "esperado": "prever_demanda"
+    },
+    {
+      "caso": "roteamento: Qual a previsão de demanda com promoção nos dias 3, 4 e 5?",
+      "ok": true,
+      "obtido": [
+        "prever_demanda"
+      ],
+      "esperado": "prever_demanda"
+    },
+    {
+      "caso": "roteamento: Qual modelo erra menos? Compare os modelos.",
+      "ok": true,
+      "obtido": [
+        "comparar_modelos"
+      ],
+      "esperado": "comparar_modelos"
+    },
+    {
+      "caso": "roteamento: Qual o MAPE do melhor modelo no backtest?",
+      "ok": true,
+      "obtido": [
+        "comparar_modelos"
+      ],
+      "esperado": "comparar_modelos"
+    },
+    {
+      "caso": "roteamento: Qual o efeito da promoção nas vendas?",
+      "ok": true,
+      "obtido": [
+        "explicar_fatores"
+      ],
+      "esperado": "explicar_fatores"
+    },
+    {
+      "caso": "roteamento: Por que o sábado vende mais?",
+      "ok": true,
+      "obtido": [
+        "explicar_fatores"
+      ],
+      "esperado": "explicar_fatores"
+    },
+    {
+      "caso": "roteamento: Quanto devo comprar se tenho estoque atual de 300 unidades?",
+      "ok": true,
+      "obtido": [
+        "recomendar_estoque"
+      ],
+      "esperado": "recomendar_estoque"
+    },
+    {
+      "caso": "roteamento: O modelo piorou nas últimas semanas? Tem drift?",
+      "ok": true,
+      "obtido": [
+        "verificar_drift"
+      ],
+      "esperado": "verificar_drift"
+    },
+    {
+      "caso": "roteamento: Publique a previsão para o time de compras.",
+      "ok": true,
+      "obtido": [
+        "publicar_previsao"
+      ],
+      "esperado": "publicar_previsao"
+    },
+    {
+      "caso": "roteamento: Dispare o retreino do modelo.",
+      "ok": true,
+      "obtido": [
+        "disparar_retreino"
+      ],
+      "esperado": "disparar_retreino"
+    },
+    {
+      "caso": "número inventado é barrado (status revisar)",
+      "ok": true,
+      "obtido": "revisar",
+      "esperado": "revisar"
+    },
+    {
+      "caso": "número correto passa (status ok)",
+      "ok": true,
+      "obtido": "ok",
+      "esperado": "ok"
+    }
+  ]
+}
