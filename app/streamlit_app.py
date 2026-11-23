@@ -12,6 +12,7 @@ from pathlib import Path
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+import tema
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
@@ -20,7 +21,6 @@ from forecastagent import data as D  # noqa: E402
 from forecastagent import models as M  # noqa: E402
 from forecastagent.tools import build_agent, t_drift  # noqa: E402
 
-RED, INK, GREY = "#E3263B", "#1E1416", "#9A8A8D"
 st.set_page_config(page_title="Previsão de demanda · Produto Alfa", page_icon="📈", layout="wide")
 
 
@@ -45,10 +45,12 @@ agent = get_agent()
 st.session_state.setdefault("pending", [])
 st.session_state.setdefault("log", [])
 
-st.title("Previsão de demanda do Produto Alfa")
-st.caption("Agente de IA que prevê os próximos 14 dias, compara modelos e recomenda estoque. "
-           "Os números vêm de código determinístico; o modelo de linguagem só interpreta e explica. "
-           "Dados sintéticos com parâmetros conhecidos, para avaliar contra gabarito.")
+tema.aplicar_tema(
+    "Previsão de demanda do Produto Alfa",
+    "Agente de IA que prevê os próximos 14 dias, compara modelos e recomenda estoque. Os números vêm de código "
+    "determinístico; o modelo de linguagem só interpreta e explica.",
+    kicker="Agente de IA · previsão de demanda",
+    chips=["Gemini", "SARIMAX · regressão · GBM", "Dados sintéticos com gabarito"])
 if agent.llm is None:
     st.info("Modo offline: sem GEMINI_API_KEY, o agente escolhe ferramentas por palavras-chave.", icon="🔌")
 
@@ -58,24 +60,25 @@ with tab_dash:
     c1, c2 = st.columns([3, 1])
     with c2:
         st.subheader("Cenário")
-        promo = st.multiselect("Dias com promoção (1 a 14)", list(range(1, 15)), default=[])
+        promo = st.multiselect("Dias com promoção (1 a 14)", list(range(1, 15)), default=[], placeholder="Escolha os dias")
         estoque = st.number_input("Estoque atual (unidades)", 0, 10000, 300, step=50)
         servico = st.slider("Nível de serviço", 0.80, 0.99, 0.95, 0.01)
     fc = M.forecast(14, promo)
     with c1:
         hist = df.tail(120)
         fig = go.Figure()
-        fig.add_trace(go.Scatter(x=hist["data"], y=hist["vendas"], name="Vendas reais", line=dict(color=GREY, width=1.5)))
+        fig.add_trace(go.Scatter(x=hist["data"], y=hist["vendas"], name="Vendas reais", line=dict(color=tema.neutro(), width=1.5)))
         fig.add_trace(go.Scatter(x=list(fc["data"]) + list(fc["data"][::-1]), y=list(fc["p90"]) + list(fc["p10"][::-1]),
-                                 fill="toself", fillcolor="rgba(227,38,59,0.15)", line=dict(width=0), name="Intervalo p10–p90"))
+                                 fill="toself", fillcolor=tema.rgba(tema.cor(0), 0.16), line=dict(width=0),
+                                 name="Intervalo p10–p90", hoverinfo="skip"))
         fig.add_trace(go.Scatter(x=fc["data"], y=fc["previsao"], name=f"Previsão ({fc['modelo'].iloc[0]})",
-                                 line=dict(color=RED, width=2.5)))
+                                 line=dict(color=tema.cor(0), width=2.5), mode="lines+markers", marker=dict(size=8)))
         promo_days = fc[fc["em_promocao"] == 1]
         if len(promo_days):
             fig.add_trace(go.Scatter(x=promo_days["data"], y=promo_days["previsao"], mode="markers", name="Promoção",
-                                     marker=dict(color=INK, size=9, symbol="star")))
-        fig.update_layout(height=420, margin=dict(l=10, r=10, t=30, b=10), legend=dict(orientation="h", y=-0.15),
-                          yaxis_title="unidades/dia")
+                                     marker=dict(color=tema.cor(1), size=13, symbol="star",
+                                                 line=dict(width=1.5, color="white"))))
+        tema.estilo_plotly(fig, 420, yaxis_title="unidades/dia", hovermode="x unified")
         st.plotly_chart(fig, use_container_width=True)
 
     from forecastagent.tools import t_estoque
@@ -101,8 +104,10 @@ with tab_dash:
         fat = pd.DataFrame({"Fator": ["Promoção", "Feriado nacional", "Tendência (ao ano)"],
                             "Efeito (%)": [drv["efeito_promocao_pct"], drv["efeito_feriado_pct"], drv["tendencia_pct_ano"]]})
         fig2 = go.Figure(go.Bar(x=fat["Efeito (%)"], y=fat["Fator"], orientation="h",
-                                marker_color=[RED if v > 0 else GREY for v in fat["Efeito (%)"]]))
-        fig2.update_layout(height=240, margin=dict(l=10, r=10, t=10, b=10), xaxis_title="%")
+                                marker_color=[tema.cor(0) if v > 0 else tema.cor(1) for v in fat["Efeito (%)"]],
+                                text=[f"{v:+.1f}%" for v in fat["Efeito (%)"]], textposition="outside", cliponaxis=False,
+                                hovertemplate="%{y}: %{x:+.1f}%<extra></extra>"))
+        tema.estilo_plotly(fig2, 240, xaxis_title="efeito (%)", showlegend=False)
         st.plotly_chart(fig2, use_container_width=True)
 
 with tab_agent:
@@ -110,7 +115,7 @@ with tab_agent:
     exemplos = ["Quanto vamos vender nos próximos 14 dias?", "Qual o efeito da promoção nas vendas?",
                 "Quanto devo comprar se tenho estoque atual de 300 unidades?", "Compare os modelos.",
                 "Publique a previsão para o time de compras."]
-    ex = st.selectbox("Exemplos", [""] + exemplos)
+    ex = st.selectbox("Exemplos", [""] + exemplos, placeholder="Escolha um exemplo")
     q = st.text_input("Pergunta", value=ex)
     if st.button("Perguntar", type="primary") and q.strip():
         with st.spinner("Consultando ferramentas…"):
